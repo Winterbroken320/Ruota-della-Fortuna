@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/mcp.js",
+      "src": "mcp-http-server.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/mcp",
-      "dest": "/api/mcp.js"
+      "src": "/(.*)",
+      "dest": "mcp-http-server.js"
     }
   ]
 }
