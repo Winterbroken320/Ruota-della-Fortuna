@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const TAGS_PATH = path.join(process.cwd(), "src", "tags.json");
+const TAGS_PATH = path.join(__dirname, "src", "tags.json");
 
 function loadDimensions() {
   return JSON.parse(fs.readFileSync(TAGS_PATH, "utf-8"));
@@ -51,7 +51,7 @@ function handleCall(name, args = {}) {
   }
 
   if (name === "ero_slot_spin") {
-    allNonGore = dims.filter((d) => !d.gore).map((d) => d.id);
+    const allNonGore = dims.filter((d) => !d.gore).map((d) => d.id);
     const active = args.active && args.active.length ? args.active : allNonGore;
     const gore = !!args.gore;
     const results = [];
@@ -75,43 +75,77 @@ function handleCall(name, args = {}) {
   throw new Error("Unknown tool: " + name);
 }
 
-module.exports = (req, res) => {
+// Vercel serverless handler
+module.exports = async (req, res) => {
+  // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+  // Root path - health check
+  if (req.url === "/" || req.url === "") {
+    return res.status(200).send("Ruota della Fortuna MCP Server is running");
   }
 
-  const { id, method, params } = req.body;
+  // MCP endpoint
+  if (req.url === "/mcp" && req.method === "POST") {
+    const { id, method, params } = req.body;
 
-  if (method === "initialize") {
-    return res.json({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        protocolVersion: "2024-11-05",
-        capabilities: { tools: {} },
-        serverInfo: { name: "ero-slot", version: "1.0.0" },
-      },
-    });
-  }
-
-  if (method === "tools/list") {
-    return res.json({
-      jsonrpc: "2.0",
-      id,
-      result: { tools: TOOLS },
-    });
-  }
-
-  if (method === "tools/call") {
-    const { name, arguments: args } = params;
     try {
-      const result = handleCall(name, args);
-      return res.json({
+      if (method === "initialize") {
+        return res.json({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            protocolVersion: "2024-11-05",
+            capabilities: { tools: {} },
+            serverInfo: { name: "ero-slot", version: "1.0.0" },
+          },
+        });
+      }
+
+      if (method === "tools/list") {
+        return res.json({
+          jsonrpc: "2.0",
+          id,
+          result: { tools: TOOLS },
+        });
+      }
+
+      if (method === "tools/call") {
+        const { name, arguments: args } = params;
+        const result = handleCall(name, args);
+        return res.json({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          },
+        });
+      }
+
+      if (id) {
+        return res.status(400).json({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: "Method not found" },
+        });
+      }
+
+      return res.status(204).end();
+    } catch (e) {
+      return res.status(500).json({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32603, message: e.message },
+      });
+    }
+  }
+
+  // 404 for other paths
+  return res.status(404).send("Not found");
+};
